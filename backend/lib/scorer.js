@@ -138,9 +138,9 @@ function sampleRoutePoints(coordinates) {
  * 
  * @param {Array} coordinates - Array of [lng, lat] pairs
  * @param {object} [weights] - Optional weight overrides
- * @returns {object} Score result { score, reason, segments, warning }
+ * @returns {Promise<object>} Score result { score, reason, segments, warning }
  */
-function scoreRoute(coordinates, weights = null) {
+async function scoreRoute(coordinates, weights = null) {
   if (!gridData) loadGrid();
 
   const w = weights || gridData.weights;

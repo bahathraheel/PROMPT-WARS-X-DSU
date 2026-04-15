@@ -88,9 +88,9 @@ router.post('/', async (req, res, next) => {
     }
 
     // Score each route
-    const scoredRoutes = routesData.map((route, index) => {
+    const scoredRoutes = await Promise.all(routesData.map(async (route, index) => {
       const coordinates = route.coordinates;
-      const scoreResult = scoreRoute(coordinates);
+      const scoreResult = await scoreRoute(coordinates);
 
       return {
         id: index === 0 ? 'route_fast' : `route_alt_${index}`,
