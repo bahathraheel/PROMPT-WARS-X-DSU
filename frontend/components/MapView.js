@@ -3,81 +3,64 @@
 import { useRef, useEffect, useState } from 'react';
 
 /**
- * Mapbox GL JS map component with dark styling, 3D terrain,
- * user location marker, and route line rendering.
+ * Leaflet + OpenStreetMap map component with route rendering.
+ * Uses free OSM tiles — no API key needed.
  */
 export default function MapView({ userLocation, routes, selectedRoute, onMapClick }) {
   const mapContainer = useRef(null);
   const mapRef = useRef(null);
+  const layersRef = useRef([]);
+  const markersRef = useRef([]);
   const [mapLoaded, setMapLoaded] = useState(false);
 
   // Initialize map
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
 
-    // Dynamically import mapbox-gl (client-only)
-    import('mapbox-gl').then((mapboxgl) => {
-      // Use environment variable for Mapbox token
-      mapboxgl.default.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    // Dynamically import leaflet (client-only)
+    import('leaflet').then((L) => {
+      // Fix Leaflet default icon paths for bundled environments
+      delete L.Icon.Default.prototype._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+        iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+      });
 
-      const map = new mapboxgl.default.Map({
-        container: mapContainer.current,
-        style: {
-          version: 8,
-          name: 'SICHER Dark',
-          sources: {
-            'osm-tiles': {
-              type: 'raster',
-              tiles: [
-                'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-                'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-                'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-              ],
-              tileSize: 256,
-              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-            },
-          },
-          layers: [
-            {
-              id: 'osm-tiles-layer',
-              type: 'raster',
-              source: 'osm-tiles',
-              minzoom: 0,
-              maxzoom: 19,
-            },
-          ],
-        },
-        center: userLocation
-          ? [userLocation.lng, userLocation.lat]
-          : [77.2090, 28.6139],
+      const defaultCenter = userLocation
+        ? [userLocation.lat, userLocation.lng]
+        : [28.6139, 77.2090];
+
+      const map = L.map(mapContainer.current, {
+        center: defaultCenter,
         zoom: 14,
-        pitch: 45,
-        bearing: -17.6,
-        antialias: true,
+        zoomControl: false,
       });
 
-      // Navigation controls
-      map.addControl(new mapboxgl.default.NavigationControl({
-        showCompass: true,
-        showZoom: true,
-        visualizePitch: true,
-      }), 'bottom-right');
+      // Premium-looking map tiles (CartoCDN Voyager — free, detailed, colorful)
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 20,
+      }).addTo(map);
 
-      map.on('load', () => {
-        setMapLoaded(true);
-        console.log('[SICHER] Map loaded');
-      });
+      // Zoom control bottom-right
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-      // Allow passing clicks up to parent (for manual destination select)
+      // Click handler for manual destination
       map.on('click', (e) => {
         if (onMapClick) {
-          onMapClick(e.lngLat);
+          onMapClick({ lat: e.latlng.lat, lng: e.latlng.lng });
         }
       });
 
-      map.getCanvas().style.cursor = 'crosshair';
+      // Set crosshair cursor
+      mapContainer.current.style.cursor = 'crosshair';
 
       mapRef.current = map;
+      window._leaflet = L;
+      setMapLoaded(true);
+      console.log('[SICHER] Leaflet map loaded');
     });
 
     return () => {
@@ -92,170 +75,141 @@ export default function MapView({ userLocation, routes, selectedRoute, onMapClic
   // Update user marker when location changes
   useEffect(() => {
     if (!mapRef.current || !mapLoaded || !userLocation) return;
-
+    const L = window._leaflet;
     const map = mapRef.current;
 
-    // Remove existing user marker layer
-    if (map.getLayer('user-marker')) map.removeLayer('user-marker');
-    if (map.getLayer('user-marker-pulse')) map.removeLayer('user-marker-pulse');
-    if (map.getSource('user-location')) map.removeSource('user-location');
-
-    // Add user location source
-    map.addSource('user-location', {
-      type: 'geojson',
-      data: {
-        type: 'Feature',
-        geometry: {
-          type: 'Point',
-          coordinates: [userLocation.lng, userLocation.lat],
-        },
-      },
-    });
+    // Remove old user markers
+    markersRef.current.forEach(m => map.removeLayer(m));
+    markersRef.current = [];
 
     // Pulse ring
-    map.addLayer({
-      id: 'user-marker-pulse',
-      type: 'circle',
-      source: 'user-location',
-      paint: {
-        'circle-radius': 20,
-        'circle-color': 'rgba(0, 255, 136, 0.15)',
-        'circle-stroke-width': 1,
-        'circle-stroke-color': 'rgba(0, 255, 136, 0.3)',
-      },
-    });
+    const pulse = L.circleMarker([userLocation.lat, userLocation.lng], {
+      radius: 22,
+      fillColor: 'rgba(0, 180, 100, 0.15)',
+      fillOpacity: 0.4,
+      color: 'rgba(0, 180, 100, 0.4)',
+      weight: 2,
+      interactive: false,
+    }).addTo(map);
+    markersRef.current.push(pulse);
 
     // Center dot
-    map.addLayer({
-      id: 'user-marker',
-      type: 'circle',
-      source: 'user-location',
-      paint: {
-        'circle-radius': 7,
-        'circle-color': '#00ff88',
-        'circle-stroke-width': 3,
-        'circle-stroke-color': '#06060c',
-      },
-    });
+    const dot = L.circleMarker([userLocation.lat, userLocation.lng], {
+      radius: 8,
+      fillColor: '#00b368',
+      fillOpacity: 1,
+      color: '#ffffff',
+      weight: 3,
+      interactive: false,
+    }).addTo(map);
+    markersRef.current.push(dot);
 
     // Fly to location
-    map.flyTo({
-      center: [userLocation.lng, userLocation.lat],
-      zoom: 14,
-      pitch: 45,
-      duration: 2000,
-    });
+    map.flyTo([userLocation.lat, userLocation.lng], 14, { duration: 1.5 });
   }, [userLocation, mapLoaded]);
 
   // Draw routes when they arrive
   useEffect(() => {
     if (!mapRef.current || !mapLoaded || !routes) return;
-
+    const L = window._leaflet;
     const map = mapRef.current;
 
-    // Clear old route layers and sources
-    // We check for both dashes and underscores just to be safe
-    const layerIds = [
-      'route_safe', 'route_safe-glow', 'route_fast', 'route_alt_1', 'route_alt_2',
-      'route-safe', 'route-safe-glow', 'route-fast', 'route-alt-1', 'route-alt-2'
-    ];
-    for (const id of layerIds) {
-      if (map.getLayer(id)) map.removeLayer(id);
-      if (map.getLayer(id + '-glow')) map.removeLayer(id + '-glow');
-      if (map.getSource(id)) map.removeSource(id);
-    }
+    // Clear old route layers
+    layersRef.current.forEach(layer => {
+      try { map.removeLayer(layer); } catch (e) { /* ignore */ }
+    });
+    layersRef.current = [];
 
     // Draw each route
     routes.forEach((route, index) => {
       const isSafest = index === 0;
-      const sourceId = route.id || `route-${index}`;
-
-      map.addSource(sourceId, {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          geometry: {
-            type: 'LineString',
-            coordinates: route.coordinates,
-          },
-          properties: {
-            score: route.safety_score,
-          },
-        },
-      });
+      // OSRM returns coordinates as [lng, lat] — Leaflet needs [lat, lng]
+      const latLngs = route.coordinates.map(c => [c[1], c[0]]);
 
       if (isSafest) {
-        // Glow layer for safe route
-        map.addLayer({
-          id: sourceId + '-glow',
-          type: 'line',
-          source: sourceId,
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round',
-          },
-          paint: {
-            'line-color': '#00b368',
-            'line-width': 14,
-            'line-blur': 12,
-            'line-opacity': 0.2,
-          },
-        });
+        // Glow effect for safest route
+        const glow = L.polyline(latLngs, {
+          color: '#00b368',
+          weight: 16,
+          opacity: 0.15,
+          lineCap: 'round',
+          lineJoin: 'round',
+          interactive: false,
+        }).addTo(map);
+        layersRef.current.push(glow);
 
-        // Main safe route line
-        map.addLayer({
-          id: sourceId,
-          type: 'line',
-          source: sourceId,
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round',
-          },
-          paint: {
-            'line-color': route.warning ? '#e63946' : '#00b368',
-            'line-width': 5,
-            'line-opacity': 1,
-          },
-        });
+        // Main safest route line
+        const mainLine = L.polyline(latLngs, {
+          color: route.warning ? '#e63946' : '#00b368',
+          weight: 6,
+          opacity: 1,
+          lineCap: 'round',
+          lineJoin: 'round',
+        }).addTo(map);
+        mainLine.bindPopup(
+          `<div style="font-family:Inter,system-ui,sans-serif;padding:4px">
+            <strong style="color:#00b368">🛡️ ${route.label}</strong><br/>
+            Safety: <strong>${route.safety_score}/100</strong><br/>
+            Distance: ${route.distance_km} km<br/>
+            Time: ~${route.duration_min} min
+          </div>`
+        );
+        layersRef.current.push(mainLine);
+
+        // Start marker
+        const startMarker = L.circleMarker(latLngs[0], {
+          radius: 8,
+          fillColor: '#00b368',
+          fillOpacity: 1,
+          color: '#fff',
+          weight: 3,
+        }).addTo(map);
+        startMarker.bindTooltip('Start', { permanent: false, direction: 'top' });
+        layersRef.current.push(startMarker);
+
+        // End marker
+        const endMarker = L.circleMarker(latLngs[latLngs.length - 1], {
+          radius: 8,
+          fillColor: '#e63946',
+          fillOpacity: 1,
+          color: '#fff',
+          weight: 3,
+        }).addTo(map);
+        endMarker.bindTooltip('Destination', { permanent: false, direction: 'top' });
+        layersRef.current.push(endMarker);
       } else {
-        // Alternative / fast route — muted
-        map.addLayer({
-          id: sourceId,
-          type: 'line',
-          source: sourceId,
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round',
-          },
-          paint: {
-            'line-color': route.warning ? '#ff4466' : '#6670a0',
-            'line-width': 3,
-            'line-opacity': 0.6,
-            'line-dasharray': [2, 3],
-          },
-        });
+        // Alternative route — dashed, muted
+        const altLine = L.polyline(latLngs, {
+          color: route.warning ? '#ff4466' : '#6670a0',
+          weight: 3,
+          opacity: 0.5,
+          dashArray: '8, 12',
+          lineCap: 'round',
+          lineJoin: 'round',
+        }).addTo(map);
+        altLine.bindPopup(
+          `<div style="font-family:Inter,system-ui,sans-serif;padding:4px">
+            <strong>${route.label}</strong><br/>
+            Safety: <strong>${route.safety_score}/100</strong><br/>
+            Distance: ${route.distance_km} km<br/>
+            Time: ~${route.duration_min} min
+          </div>`
+        );
+        layersRef.current.push(altLine);
       }
     });
 
     // Fit map to show all routes
     if (routes.length > 0 && routes[0].coordinates.length > 0) {
-      const allCoords = routes.flatMap(r => r.coordinates);
-      const bounds = allCoords.reduce(
-        (b, coord) => {
-          return {
-            minLng: Math.min(b.minLng, coord[0]),
-            maxLng: Math.max(b.maxLng, coord[0]),
-            minLat: Math.min(b.minLat, coord[1]),
-            maxLat: Math.max(b.maxLat, coord[1]),
-          };
-        },
-        { minLng: Infinity, maxLng: -Infinity, minLat: Infinity, maxLat: -Infinity },
+      const allLatLngs = routes.flatMap(r =>
+        r.coordinates.map(c => [c[1], c[0]])
       );
-
-      map.fitBounds(
-        [[bounds.minLng, bounds.minLat], [bounds.maxLng, bounds.maxLat]],
-        { padding: { top: 120, bottom: 250, left: 40, right: 40 }, duration: 1500, pitch: 45 },
-      );
+      const bounds = L.latLngBounds(allLatLngs);
+      map.fitBounds(bounds, {
+        padding: [80, 80],
+        maxZoom: 16,
+        animate: true,
+      });
     }
   }, [routes, mapLoaded]);
 
@@ -263,17 +217,52 @@ export default function MapView({ userLocation, routes, selectedRoute, onMapClic
   useEffect(() => {
     if (!mapRef.current || !mapLoaded || !routes || !selectedRoute) return;
 
-    const map = mapRef.current;
+    // Rebuild route opacity based on selection
+    let layerIndex = 0;
+    routes.forEach((route, index) => {
+      const isSafest = index === 0;
+      const isSelected = route.id === selectedRoute.id;
 
-    routes.forEach((route) => {
-      const layerId = route.id || `route-${routes.indexOf(route)}`;
-      if (map.getLayer(layerId)) {
-        const isSelected = route.id === selectedRoute.id;
-        map.setPaintProperty(layerId, 'line-opacity', isSelected ? 0.95 : 0.3);
-        map.setPaintProperty(layerId, 'line-width', isSelected ? 5 : 2);
+      if (isSafest) {
+        // Glow layer
+        if (layersRef.current[layerIndex]) {
+          layersRef.current[layerIndex].setStyle({ opacity: isSelected ? 0.2 : 0.05 });
+        }
+        layerIndex++;
+        // Main line
+        if (layersRef.current[layerIndex]) {
+          layersRef.current[layerIndex].setStyle({
+            opacity: isSelected ? 1 : 0.3,
+            weight: isSelected ? 6 : 3,
+          });
+        }
+        layerIndex++;
+        // Start marker
+        layerIndex++;
+        // End marker
+        layerIndex++;
+      } else {
+        if (layersRef.current[layerIndex]) {
+          layersRef.current[layerIndex].setStyle({
+            opacity: isSelected ? 0.9 : 0.3,
+            weight: isSelected ? 5 : 2,
+          });
+        }
+        layerIndex++;
       }
     });
   }, [selectedRoute, routes, mapLoaded]);
 
-  return <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />;
+  return (
+    <>
+      {/* Leaflet CSS loaded via CDN */}
+      <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+        integrity="sha512-Zcn6bjR/8RZbLEDCR/ZQ+QvYEjaSYGfPPUBxKvI1J2VUKMbE1h3cdo85s0wBwSzV1aoU5+pJP8mhxqHMSx+Gg=="
+        crossOrigin="anonymous"
+      />
+      <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
+    </>
+  );
 }
