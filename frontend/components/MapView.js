@@ -146,6 +146,25 @@ export default function MapView({ userLocation, routes, selectedRoute, onMapClic
           />
         );
       })}
+
+      {/* Destination marker (Red point at the end of the safely selected route) */}
+      {routes && routes.length > 0 && (
+        <Marker
+          position={{
+            lat: (selectedRoute || routes[0]).coordinates[(selectedRoute || routes[0]).coordinates.length - 1][1],
+            lng: (selectedRoute || routes[0]).coordinates[(selectedRoute || routes[0]).coordinates.length - 1][0]
+          }}
+          icon={{
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: '#e63946', // Distinct Red
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 3,
+          }}
+          title="Destination"
+        />
+      )}
     </GoogleMap>
   );
 }
