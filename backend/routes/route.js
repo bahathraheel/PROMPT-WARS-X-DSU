@@ -58,12 +58,12 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    // Edge case: very long route (> 20km walking)
-    if (dist > 20) {
+    // Edge case: very long route (>200km)
+    if (dist > 200) {
       return res.json({
         request_id: requestId,
         routes: [],
-        advisory: '⚠️ This route is very long for walking (>20km). Consider using a ride service.',
+        advisory: '⚠️ This route is extremely long (>200km). Please choose a closer destination.',
         duration_ms: Date.now() - startTime,
       });
     }
@@ -145,7 +145,7 @@ router.post('/', async (req, res, next) => {
  */
 async function fetchOSRMRoutes(startLng, startLat, endLng, endLat) {
   const baseUrl = process.env.OSRM_BASE_URL || 'https://router.project-osrm.org';
-  const url = `${baseUrl}/route/v1/foot/${startLng},${startLat};${endLng},${endLat}?alternatives=true&overview=full&geometries=geojson&steps=false`;
+  const url = `${baseUrl}/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?alternatives=true&overview=full&geometries=geojson&steps=false`;
 
   try {
     const controller = new AbortController();

@@ -255,13 +255,19 @@ export default function MapView({ userLocation, routes, selectedRoute, onMapClic
 
   return (
     <>
-      {/* Leaflet CSS loaded via CDN */}
+      {/* Leaflet CSS - no integrity check to avoid CSP issues */}
       <link
         rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
-        integrity="sha512-Zcn6bjR/8RZbLEDCR/ZQ+QvYEjaSYGfPPUBxKvI1J2VUKMbE1h3cdo85s0wBwSzV1aoU5+pJP8mhxqHMSx+Gg=="
-        crossOrigin="anonymous"
       />
+      {/* Critical inline CSS to fix tile gaps */}
+      <style>{`
+        .leaflet-tile-pane { z-index: 2; }
+        .leaflet-tile { border: none !important; outline: none !important; }
+        .leaflet-container { background: #e8e8e8; }
+        .leaflet-tile-container img { width: 256px !important; height: 256px !important; }
+        .leaflet-popup-content { font-family: Inter, system-ui, sans-serif; }
+      `}</style>
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
     </>
   );
