@@ -1,0 +1,9 @@
+node_modules/
+.next/
+out/
+build/
+.env
+.DS_Store
+*.log
+coverage/
+jest.config.js.snap
