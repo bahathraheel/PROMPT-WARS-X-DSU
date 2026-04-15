@@ -103,7 +103,7 @@ router.post('/', async (req, res, next) => {
         warning: scoreResult.warning,
         details: scoreResult.details,
       };
-    });
+    }));
 
     // Sort by safety score (highest first) and relabel
     scoredRoutes.sort((a, b) => b.safety_score - a.safety_score);
