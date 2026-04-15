@@ -19,20 +19,25 @@ const API_BASE = typeof window !== 'undefined'
 export async function fetchRoute(start, destination) {
   // Step 1: Geocode destination
   let endCoords;
+  let destName = typeof destination === 'string' ? destination : destination.address;
 
-  // Check if destination is already coordinates
-  const coordMatch = destination.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
-  if (coordMatch) {
-    endCoords = { lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) };
-  } else {
-    // Send user's current location to bias geocoding to nearby places
-    const geocodeUrl = `${API_BASE}/api/geocode?address=${encodeURIComponent(destination)}&lat=${start.lat}&lng=${start.lng}`;
-    const geoRes = await fetch(geocodeUrl);
-    if (!geoRes.ok) {
-      const err = await geoRes.json().catch(() => ({}));
-      throw new Error(err.error || 'Failed to geocode destination');
+  if (typeof destination === 'object' && destination.lat && destination.lng) {
+    endCoords = { lat: destination.lat, lng: destination.lng };
+  } else if (typeof destination === 'string') {
+    // Check if destination is already coordinates
+    const coordMatch = destination.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+    if (coordMatch) {
+      endCoords = { lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) };
+    } else {
+      // Send user's current location to bias geocoding to nearby places
+      const geocodeUrl = `${API_BASE}/api/geocode?address=${encodeURIComponent(destination)}&lat=${start.lat}&lng=${start.lng}`;
+      const geoRes = await fetch(geocodeUrl);
+      if (!geoRes.ok) {
+        const err = await geoRes.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to geocode destination');
+      }
+      endCoords = await geoRes.json();
     }
-    endCoords = await geoRes.json();
   }
 
   // Step 2: Score routes
@@ -44,7 +49,7 @@ export async function fetchRoute(start, destination) {
       start_lng: start.lng,
       end_lat: endCoords.lat,
       end_lng: endCoords.lng,
-      destination_name: destination,
+      destination_name: destName,
     }),
   });
 

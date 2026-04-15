@@ -61,7 +61,9 @@ export default function HomePage() {
 
   // Handle search submission
   const handleSearch = useCallback(async (query) => {
-    if (!query.trim() || !userLocation) return;
+    if (!query || !userLocation) return;
+    const isObject = typeof query === 'object';
+    if (!isObject && !query.trim()) return;
 
     setLoading(true);
     setRoutes(null);
@@ -85,7 +87,7 @@ export default function HomePage() {
       // Save to history
       if (data.routes && data.routes.length > 0) {
         await saveHistory({
-          destination: query,
+          destination: isObject ? query.address : query,
           start: userLocation,
           end: {
             lat: data.routes[0].coordinates[data.routes[0].coordinates.length - 1][1],

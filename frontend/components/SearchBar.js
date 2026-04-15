@@ -11,6 +11,7 @@ const LIBRARIES = ['places'];
  */
 export default function SearchBar({ onSearch, userLocation, locationError, disabled }) {
   const [query, setQuery] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState(null);
   const inputRef = useRef(null);
   const autoCompleteRef = useRef(null);
 
@@ -38,8 +39,12 @@ export default function SearchBar({ onSearch, userLocation, locationError, disab
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (query.trim() && onSearch) {
-      onSearch(query.trim());
+    if (onSearch) {
+      if (selectedLocation && query === selectedLocation.address) {
+        onSearch(selectedLocation);
+      } else if (query.trim()) {
+        onSearch(query.trim());
+      }
     }
   };
 

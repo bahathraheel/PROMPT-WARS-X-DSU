@@ -29,6 +29,7 @@ function helmetMiddleware() {
           'https://cdn.jsdelivr.net',
           'https://cdnjs.cloudflare.com',
           'https://unpkg.com',
+          'https://maps.googleapis.com',
           'blob:',
         ],
         styleSrc: [
@@ -37,6 +38,7 @@ function helmetMiddleware() {
           'https://fonts.googleapis.com',
           'https://cdnjs.cloudflare.com',
           'https://unpkg.com',
+          'https://maps.googleapis.com',
         ],
         fontSrc: ['\'self\'', 'https://fonts.gstatic.com'],
         imgSrc: [
@@ -47,6 +49,10 @@ function helmetMiddleware() {
           'https://*.tile.openstreetmap.org',
           'https://cdnjs.cloudflare.com',
           'https://unpkg.com',
+          'https://maps.gstatic.com',
+          'https://maps.googleapis.com',
+          'https://*.googleapis.com',
+          'https://*.ggpht.com',
         ],
         connectSrc: [
           '\'self\'',
@@ -54,6 +60,8 @@ function helmetMiddleware() {
           'https://nominatim.openstreetmap.org',
           'https://*.basemaps.cartocdn.com',
           'https://*.tile.openstreetmap.org',
+          'https://maps.googleapis.com',
+          'https://generativelanguage.googleapis.com',
         ],
         workerSrc: ['\'self\'', 'blob:'],
         childSrc: ['blob:'],
