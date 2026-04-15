@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Loader } from '@googlemaps/js-api-loader';
+import { useJsApiLoader } from '@react-google-maps/api';
+
+const LIBRARIES = ['places'];
 
 /**
  * Search bar component with destination input and location badge.
@@ -12,31 +14,27 @@ export default function SearchBar({ onSearch, userLocation, locationError, disab
   const inputRef = useRef(null);
   const autoCompleteRef = useRef(null);
 
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
+    libraries: LIBRARIES
+  });
+
   useEffect(() => {
-    const loader = new Loader({
-      apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
-      version: 'weekly',
-      libraries: ['places']
-    });
+    if (isLoaded && inputRef.current && !autoCompleteRef.current) {
+      autoCompleteRef.current = new window.google.maps.places.Autocomplete(inputRef.current, {
+        fields: ['formatted_address', 'geometry'],
+        types: ['address', 'establishment']
+      });
 
-    loader.load().then(() => {
-      if (inputRef.current) {
-        autoCompleteRef.current = new window.google.maps.places.Autocomplete(inputRef.current, {
-          fields: ['formatted_address', 'geometry'],
-          types: ['address', 'establishment']
-        });
-
-        autoCompleteRef.current.addListener('place_changed', () => {
-          const place = autoCompleteRef.current.getPlace();
-          if (place.formatted_address) {
-            setQuery(place.formatted_address);
-          }
-        });
-      }
-    }).catch(e => {
-      console.warn('Google Maps Autocomplete failed to load:', e);
-    });
-  }, []);
+      autoCompleteRef.current.addListener('place_changed', () => {
+        const place = autoCompleteRef.current.getPlace();
+        if (place.formatted_address) {
+          setQuery(place.formatted_address);
+        }
+      });
+    }
+  }, [isLoaded]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
