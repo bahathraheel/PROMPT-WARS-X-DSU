@@ -14,6 +14,8 @@ const router = express.Router();
 const geocodeSchema = Joi.object({
   address: Joi.string().min(2).max(200).required()
     .messages({ 'string.min': 'Address must be at least 2 characters' }),
+  lat: Joi.number().min(-90).max(90).optional(),
+  lng: Joi.number().min(-180).max(180).optional(),
 });
 
 /**
@@ -31,12 +33,12 @@ router.get('/', async (req, res, next) => {
       return next(err);
     }
 
-    const { address } = value;
+    const { address, lat, lng } = value;
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
 
     if (apiKey && apiKey !== 'your_google_maps_key_here') {
       // Use Google Maps Geocoding API
-      const result = await googleGeocode(address, apiKey);
+      const result = await googleGeocode(address, apiKey, lat, lng);
       return res.json(result);
     }
 
@@ -53,7 +55,17 @@ router.get('/', async (req, res, next) => {
 
     // Fallback Geocoding (OpenStreetMap Nominatim for free usage globally)
     const fetch = require('node-fetch');
-    const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
+    let nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
+    
+    if (lat && lng) {
+      // Bias results to ~50km around the user using a viewbox
+      const span = 0.5;
+      const minLon = parseFloat(lng) - span;
+      const maxLon = parseFloat(lng) + span;
+      const minLat = parseFloat(lat) - span;
+      const maxLat = parseFloat(lat) + span;
+      nominatimUrl += `&viewbox=${minLon},${maxLat},${maxLon},${minLat}&bounded=1`;
+    }
     
     const osResponse = await fetch(nominatimUrl, {
       headers: { 'User-Agent': 'SICHER-Platform/1.0' } // Nominatim requires User-Agent
@@ -83,9 +95,19 @@ router.get('/', async (req, res, next) => {
 /**
  * Call Google Maps Geocoding API.
  */
-async function googleGeocode(address, apiKey) {
+async function googleGeocode(address, apiKey, lat, lng) {
   const fetch = require('node-fetch');
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
+  let url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
+
+  if (lat && lng) {
+    // Bias results to the user's region
+    const span = 0.5;
+    const minLat = parseFloat(lat) - span;
+    const maxLat = parseFloat(lat) + span;
+    const minLon = parseFloat(lng) - span;
+    const maxLon = parseFloat(lng) + span;
+    url += `&bounds=${minLat},${minLon}|${maxLat},${maxLon}`;
+  }
 
   const response = await fetch(url);
   const data = await response.json();

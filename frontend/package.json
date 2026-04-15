@@ -9,13 +9,15 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@googlemaps/js-api-loader": "^2.0.2",
+    "@react-google-maps/api": "^2.20.8",
+    "@react-three/drei": "^9.105.0",
+    "@react-three/fiber": "^8.16.0",
+    "leaflet": "^1.9.4",
     "next": "^14.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "leaflet": "^1.9.4",
-    "three": "^0.164.0",
-    "@react-three/fiber": "^8.16.0",
-    "@react-three/drei": "^9.105.0"
+    "three": "^0.164.0"
   },
   "devDependencies": {
     "eslint": "^8.57.0",

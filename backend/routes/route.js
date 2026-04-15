@@ -68,31 +68,36 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    // Fetch routes from OSRM
-    const osrmRoutes = await fetchOSRMRoutes(start_lng, start_lat, end_lng, end_lat);
+    // Fetch routes — Prioritize Google Maps if API key is available
+    let routesData;
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
 
-    if (!osrmRoutes || osrmRoutes.length === 0) {
+    if (apiKey && apiKey !== 'your_google_maps_key_here') {
+      routesData = await fetchGoogleRoutes(start_lat, start_lng, end_lat, end_lng, apiKey);
+    } else {
+      routesData = await fetchOSRMRoutes(start_lng, start_lat, end_lng, end_lat);
+    }
+
+    if (!routesData || routesData.length === 0) {
       return res.json({
         request_id: requestId,
         routes: [],
-        advisory: '❌ No walkable routes found between these points. Try different locations.',
+        advisory: '❌ No suitable routes found between these points. Try different locations.',
         duration_ms: Date.now() - startTime,
       });
     }
 
     // Score each route
-    const scoredRoutes = osrmRoutes.map((route, index) => {
-      const coordinates = route.geometry.coordinates;
+    const scoredRoutes = routesData.map((route, index) => {
+      const coordinates = route.coordinates;
       const scoreResult = scoreRoute(coordinates);
-      const distKm = route.distance / 1000;
-      const durationMin = Math.round(route.duration / 60);
 
       return {
         id: index === 0 ? 'route_fast' : `route_alt_${index}`,
-        label: index === 0 ? 'Fastest Route' : `Alternative Route ${index}`,
+        label: index === 0 ? (apiKey ? 'Google Recommended' : 'Fastest Route') : `Alternative Route ${index}`,
         coordinates,
-        distance_km: Math.round(distKm * 100) / 100,
-        duration_min: durationMin,
+        distance_km: route.distance_km,
+        duration_min: route.duration_min,
         safety_score: scoreResult.score,
         reason: scoreResult.reason,
         warning: scoreResult.warning,
@@ -140,44 +145,94 @@ router.post('/', async (req, res, next) => {
 });
 
 /**
- * Fetch alternative walking routes from OSRM demo server.
- * Returns up to 3 route alternatives.
+ * Fetch alternative routes from OSRM demo server.
  */
 async function fetchOSRMRoutes(startLng, startLat, endLng, endLat) {
   const baseUrl = process.env.OSRM_BASE_URL || 'https://router.project-osrm.org';
   const url = `${baseUrl}/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?alternatives=true&overview=full&geometries=geojson&steps=false`;
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      throw new Error(`OSRM returned ${response.status}`);
-    }
-
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`OSRM returned ${response.status}`);
     const data = await response.json();
 
-    if (data.code !== 'Ok' || !data.routes) {
+    if (data.code !== 'Ok' || !data.routes) return [];
+
+    return data.routes.map(r => ({
+      coordinates: r.geometry.coordinates,
+      distance_km: Math.round((r.distance / 1000) * 100) / 100,
+      duration_min: Math.round(r.duration / 60),
+    }));
+  } catch (err) {
+    console.error('[SICHER] OSRM error:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Fetch routes from Google Maps Directions API.
+ */
+async function fetchGoogleRoutes(startLat, startLng, endLat, endLng, apiKey) {
+  const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${startLat},${startLng}&destination=${endLat},${endLng}&alternatives=true&key=${apiKey}&mode=walking`;
+
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.status !== 'OK' || !data.routes) {
+      console.warn('[SICHER] Google Directions Status:', data.status);
       return [];
     }
 
-    // Return up to 3 routes
-    return data.routes.slice(0, 3);
+    return data.routes.map(route => {
+      // Decode polyline to coordinates
+      const points = decodePolyline(route.overview_polyline.points);
+      const leg = route.legs[0];
+      
+      return {
+        coordinates: points.map(p => [p.lng, p.lat]), // Convert to [lng, lat] for GeoJSON
+        distance_km: Math.round((leg.distance.value / 1000) * 100) / 100,
+        duration_min: Math.round(leg.duration.value / 60),
+      };
+    });
   } catch (err) {
-    if (err.name === 'AbortError') {
-      console.error('[SICHER] OSRM request timed out');
-      const error = new Error('Routing service timed out. Please try again.');
-      error.statusCode = 504;
-      throw error;
-    }
-    console.error('[SICHER] OSRM error:', err.message);
-    const error = new Error('Routing service unavailable. Please try again later.');
-    error.statusCode = 502;
-    throw error;
+    console.error('[SICHER] Google Directions error:', err.message);
+    return [];
   }
+}
+
+/**
+ * Helper to decode Google's encoded polyline string.
+ */
+function decodePolyline(encoded) {
+  if (!encoded) return [];
+  let poly = [];
+  let index = 0, len = encoded.length;
+  let lat = 0, lng = 0;
+
+  while (index < len) {
+    let b, shift = 0, result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lng += dlng;
+
+    poly.push({ lat: lat / 1e5, lng: lng / 1e5 });
+  }
+  return poly;
 }
 
 /**

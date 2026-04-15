@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { Loader } from '@googlemaps/js-api-loader';
 
 /**
  * Search bar component with destination input and location badge.
@@ -9,6 +10,33 @@ import { useState, useRef } from 'react';
 export default function SearchBar({ onSearch, userLocation, locationError, disabled }) {
   const [query, setQuery] = useState('');
   const inputRef = useRef(null);
+  const autoCompleteRef = useRef(null);
+
+  useEffect(() => {
+    const loader = new Loader({
+      apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
+      version: 'weekly',
+      libraries: ['places']
+    });
+
+    loader.load().then(() => {
+      if (inputRef.current) {
+        autoCompleteRef.current = new window.google.maps.places.Autocomplete(inputRef.current, {
+          fields: ['formatted_address', 'geometry'],
+          types: ['address', 'establishment']
+        });
+
+        autoCompleteRef.current.addListener('place_changed', () => {
+          const place = autoCompleteRef.current.getPlace();
+          if (place.formatted_address) {
+            setQuery(place.formatted_address);
+          }
+        });
+      }
+    }).catch(e => {
+      console.warn('Google Maps Autocomplete failed to load:', e);
+    });
+  }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();

@@ -202,8 +202,20 @@ function scoreRoute(coordinates, weights = null) {
   const avgCctv = realScored > 0 ? (totalCctv / realScored).toFixed(1) : 0;
   const avgEmergency = realScored > 0 ? (totalEmergency / realScored).toFixed(1) : 0;
 
-  // Generate human-readable reason
-  const reason = generateReason(finalScore, avgLighting, avgActivity, avgCctv, avgEmergency, unscoredPoints);
+  // Generate human-readable reason — use AI if key available, otherwise fallback
+  let reason;
+  const geminiKey = process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (geminiKey && geminiKey !== 'your_google_maps_key_here') {
+    reason = await generateAIReason(finalScore, {
+      lighting: avgLighting,
+      activity: avgActivity,
+      cctv: avgCctv,
+      emergency: avgEmergency,
+      unscored: unscoredPoints
+    }, geminiKey);
+  } else {
+    reason = generateReason(finalScore, avgLighting, avgActivity, avgCctv, avgEmergency, unscoredPoints);
+  }
 
   return {
     score: finalScore,
@@ -220,6 +232,43 @@ function scoreRoute(coordinates, weights = null) {
       avg_emergency: parseFloat(avgEmergency),
     },
   };
+}
+
+/**
+ * Generate an AI-powered safety assessment using Google Gemini.
+ */
+async function generateAIReason(score, factors, apiKey) {
+  const fetch = require('node-fetch');
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+
+  const prompt = `
+    As a neighborhood safety assistant, analyze this walking route:
+    - Safety Score: ${score}/100
+    - Lighting: ${factors.lighting}/10 (0=dark, 10=bright)
+    - Activity: ${factors.activity}/10 (0=isolated, 10=busy)
+    - CCTV: ${factors.cctv}/10
+    - Emergency Services: ${factors.emergency}/10
+    - Unmapped regions: ${factors.unscored} points
+    
+    Provide a concise, professional 1-2 sentence safety assessment for a traveler. 
+    If score < 40, recommend a taxi. If score > 70, mention why it's safe.
+    Don't use lists. Just natural speech.
+  `;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }]
+      })
+    });
+    const data = await response.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || generateReason(score, factors.lighting, factors.activity, factors.cctv, factors.emergency, factors.unscored);
+  } catch (err) {
+    console.error('[SICHER] Gemini AI error:', err.message);
+    return generateReason(score, factors.lighting, factors.activity, factors.cctv, factors.emergency, factors.unscored);
+  }
 }
 
 /**

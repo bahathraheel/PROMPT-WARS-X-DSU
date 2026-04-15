@@ -25,7 +25,9 @@ export async function fetchRoute(start, destination) {
   if (coordMatch) {
     endCoords = { lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) };
   } else {
-    const geoRes = await fetch(`${API_BASE}/api/geocode?address=${encodeURIComponent(destination)}`);
+    // Send user's current location to bias geocoding to nearby places
+    const geocodeUrl = `${API_BASE}/api/geocode?address=${encodeURIComponent(destination)}&lat=${start.lat}&lng=${start.lng}`;
+    const geoRes = await fetch(geocodeUrl);
     if (!geoRes.ok) {
       const err = await geoRes.json().catch(() => ({}));
       throw new Error(err.error || 'Failed to geocode destination');

@@ -1,274 +1,151 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useCallback, useState } from 'react';
+import { GoogleMap, useJsApiLoader, Polyline, Marker } from '@react-google-maps/api';
 
-/**
- * Leaflet + OpenStreetMap map component with route rendering.
- * Uses free OSM tiles — no API key needed.
- */
+const containerStyle = {
+  width: '100%',
+  height: '100%'
+};
+
+// Subtle silver map style to keep the focus on safe routes
+const silverStyle = [
+  { elementType: 'geometry', stylers: [{ color: '#f5f5f5' }] },
+  { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#f5f5f5' }] },
+  {
+    featureType: 'administrative.land_parcel',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#bdbdbd' }]
+  },
+  {
+    featureType: 'poi',
+    elementType: 'geometry',
+    stylers: [{ color: '#eeeeee' }]
+  },
+  {
+    featureType: 'poi',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#757575' }]
+  },
+  {
+    featureType: 'poi.park',
+    elementType: 'geometry',
+    stylers: [{ color: '#e5e5e5' }]
+  },
+  {
+    featureType: 'road',
+    elementType: 'geometry',
+    stylers: [{ color: '#ffffff' }]
+  },
+  {
+    featureType: 'water',
+    elementType: 'geometry',
+    stylers: [{ color: '#c9c9c9' }]
+  }
+];
+
 export default function MapView({ userLocation, routes, selectedRoute, onMapClick }) {
-  const mapContainer = useRef(null);
-  const mapRef = useRef(null);
-  const layersRef = useRef([]);
-  const markersRef = useRef([]);
-  const [mapLoaded, setMapLoaded] = useState(false);
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
+    libraries: ['places']
+  });
 
-  // Initialize map
-  useEffect(() => {
-    if (!mapContainer.current || mapRef.current) return;
+  const [map, setMap] = useState(null);
 
-    // Dynamically import leaflet (client-only)
-    import('leaflet').then((L) => {
-      // Fix Leaflet default icon paths for bundled environments
-      delete L.Icon.Default.prototype._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-        iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-      });
-
-      const defaultCenter = userLocation
-        ? [userLocation.lat, userLocation.lng]
-        : [28.6139, 77.2090];
-
-      const map = L.map(mapContainer.current, {
-        center: defaultCenter,
-        zoom: 14,
-        zoomControl: false,
-      });
-
-      // Premium-looking map tiles (CartoCDN Voyager — free, detailed, colorful)
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-        subdomains: 'abcd',
-        maxZoom: 20,
-      }).addTo(map);
-
-      // Zoom control bottom-right
-      L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-      // Click handler for manual destination
-      map.on('click', (e) => {
-        if (onMapClick) {
-          onMapClick({ lat: e.latlng.lat, lng: e.latlng.lng });
-        }
-      });
-
-      // Set crosshair cursor
-      mapContainer.current.style.cursor = 'crosshair';
-
-      mapRef.current = map;
-      window._leaflet = L;
-      setMapLoaded(true);
-      console.log('[SICHER] Leaflet map loaded');
-    });
-
-    return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const onLoad = useCallback(function callback(map) {
+    const bounds = new window.google.maps.LatLngBounds();
+    setMap(map);
   }, []);
 
-  // Update user marker when location changes
-  useEffect(() => {
-    if (!mapRef.current || !mapLoaded || !userLocation) return;
-    const L = window._leaflet;
-    const map = mapRef.current;
+  const onUnmount = useCallback(function callback(map) {
+    setMap(null);
+  }, []);
 
-    // Remove old user markers
-    markersRef.current.forEach(m => map.removeLayer(m));
-    markersRef.current = [];
+  // Center logic
+  const center = userLocation ? { lat: userLocation.lat, lng: userLocation.lng } : { lat: 28.6139, lng: 77.2090 };
 
-    // Pulse ring
-    const pulse = L.circleMarker([userLocation.lat, userLocation.lng], {
-      radius: 22,
-      fillColor: 'rgba(0, 180, 100, 0.15)',
-      fillOpacity: 0.4,
-      color: 'rgba(0, 180, 100, 0.4)',
-      weight: 2,
-      interactive: false,
-    }).addTo(map);
-    markersRef.current.push(pulse);
-
-    // Center dot
-    const dot = L.circleMarker([userLocation.lat, userLocation.lng], {
-      radius: 8,
-      fillColor: '#00b368',
-      fillOpacity: 1,
-      color: '#ffffff',
-      weight: 3,
-      interactive: false,
-    }).addTo(map);
-    markersRef.current.push(dot);
-
-    // Fly to location
-    map.flyTo([userLocation.lat, userLocation.lng], 14, { duration: 1.5 });
-  }, [userLocation, mapLoaded]);
-
-  // Draw routes when they arrive
-  useEffect(() => {
-    if (!mapRef.current || !mapLoaded || !routes) return;
-    const L = window._leaflet;
-    const map = mapRef.current;
-
-    // Clear old route layers
-    layersRef.current.forEach(layer => {
-      try { map.removeLayer(layer); } catch (e) { /* ignore */ }
-    });
-    layersRef.current = [];
-
-    // Draw each route
-    routes.forEach((route, index) => {
-      const isSafest = index === 0;
-      // OSRM returns coordinates as [lng, lat] — Leaflet needs [lat, lng]
-      const latLngs = route.coordinates.map(c => [c[1], c[0]]);
-
-      if (isSafest) {
-        // Glow effect for safest route
-        const glow = L.polyline(latLngs, {
-          color: '#00b368',
-          weight: 16,
-          opacity: 0.15,
-          lineCap: 'round',
-          lineJoin: 'round',
-          interactive: false,
-        }).addTo(map);
-        layersRef.current.push(glow);
-
-        // Main safest route line
-        const mainLine = L.polyline(latLngs, {
-          color: route.warning ? '#e63946' : '#00b368',
-          weight: 6,
-          opacity: 1,
-          lineCap: 'round',
-          lineJoin: 'round',
-        }).addTo(map);
-        mainLine.bindPopup(
-          `<div style="font-family:Inter,system-ui,sans-serif;padding:4px">
-            <strong style="color:#00b368">🛡️ ${route.label}</strong><br/>
-            Safety: <strong>${route.safety_score}/100</strong><br/>
-            Distance: ${route.distance_km} km<br/>
-            Time: ~${route.duration_min} min
-          </div>`
-        );
-        layersRef.current.push(mainLine);
-
-        // Start marker
-        const startMarker = L.circleMarker(latLngs[0], {
-          radius: 8,
-          fillColor: '#00b368',
-          fillOpacity: 1,
-          color: '#fff',
-          weight: 3,
-        }).addTo(map);
-        startMarker.bindTooltip('Start', { permanent: false, direction: 'top' });
-        layersRef.current.push(startMarker);
-
-        // End marker
-        const endMarker = L.circleMarker(latLngs[latLngs.length - 1], {
-          radius: 8,
-          fillColor: '#e63946',
-          fillOpacity: 1,
-          color: '#fff',
-          weight: 3,
-        }).addTo(map);
-        endMarker.bindTooltip('Destination', { permanent: false, direction: 'top' });
-        layersRef.current.push(endMarker);
-      } else {
-        // Alternative route — dashed, muted
-        const altLine = L.polyline(latLngs, {
-          color: route.warning ? '#ff4466' : '#6670a0',
-          weight: 3,
-          opacity: 0.5,
-          dashArray: '8, 12',
-          lineCap: 'round',
-          lineJoin: 'round',
-        }).addTo(map);
-        altLine.bindPopup(
-          `<div style="font-family:Inter,system-ui,sans-serif;padding:4px">
-            <strong>${route.label}</strong><br/>
-            Safety: <strong>${route.safety_score}/100</strong><br/>
-            Distance: ${route.distance_km} km<br/>
-            Time: ~${route.duration_min} min
-          </div>`
-        );
-        layersRef.current.push(altLine);
-      }
-    });
-
-    // Fit map to show all routes
-    if (routes.length > 0 && routes[0].coordinates.length > 0) {
-      const allLatLngs = routes.flatMap(r =>
-        r.coordinates.map(c => [c[1], c[0]])
-      );
-      const bounds = L.latLngBounds(allLatLngs);
-      map.fitBounds(bounds, {
-        padding: [80, 80],
-        maxZoom: 16,
-        animate: true,
+  // Fit bounds when routes change
+  const handleRoutesChange = useCallback(() => {
+    if (!map || !routes || routes.length === 0) return;
+    const bounds = new window.google.maps.LatLngBounds();
+    routes.forEach(route => {
+      route.coordinates.forEach(c => {
+        bounds.extend({ lat: c[1], lng: c[0] });
       });
-    }
-  }, [routes, mapLoaded]);
-
-  // Highlight selected route
-  useEffect(() => {
-    if (!mapRef.current || !mapLoaded || !routes || !selectedRoute) return;
-
-    // Rebuild route opacity based on selection
-    let layerIndex = 0;
-    routes.forEach((route, index) => {
-      const isSafest = index === 0;
-      const isSelected = route.id === selectedRoute.id;
-
-      if (isSafest) {
-        // Glow layer
-        if (layersRef.current[layerIndex]) {
-          layersRef.current[layerIndex].setStyle({ opacity: isSelected ? 0.2 : 0.05 });
-        }
-        layerIndex++;
-        // Main line
-        if (layersRef.current[layerIndex]) {
-          layersRef.current[layerIndex].setStyle({
-            opacity: isSelected ? 1 : 0.3,
-            weight: isSelected ? 6 : 3,
-          });
-        }
-        layerIndex++;
-        // Start marker
-        layerIndex++;
-        // End marker
-        layerIndex++;
-      } else {
-        if (layersRef.current[layerIndex]) {
-          layersRef.current[layerIndex].setStyle({
-            opacity: isSelected ? 0.9 : 0.3,
-            weight: isSelected ? 5 : 2,
-          });
-        }
-        layerIndex++;
-      }
     });
-  }, [selectedRoute, routes, mapLoaded]);
+    map.fitBounds(bounds, { top: 80, right: 80, bottom: 80, left: 80 });
+  }, [map, routes]);
+
+  // Trigger fit bounds
+  if (map && routes && routes.length > 0) {
+    handleRoutesChange();
+  }
+
+  if (!isLoaded) return <div className="map-placeholder">Loading Google Maps...</div>;
 
   return (
-    <>
-      {/* Leaflet CSS - no integrity check to avoid CSP issues */}
-      <link
-        rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
-      />
-      {/* Critical inline CSS to fix tile gaps */}
-      <style>{`
-        .leaflet-tile-pane { z-index: 2; }
-        .leaflet-tile { border: none !important; outline: none !important; }
-        .leaflet-container { background: #e8e8e8; }
-        .leaflet-tile-container img { width: 256px !important; height: 256px !important; }
-        .leaflet-popup-content { font-family: Inter, system-ui, sans-serif; }
-      `}</style>
-      <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
-    </>
+    <GoogleMap
+      mapContainerStyle={containerStyle}
+      center={center}
+      zoom={14}
+      onLoad={onLoad}
+      onUnmount={onUnmount}
+      onClick={(e) => onMapClick && onMapClick({ lat: e.latLng.lat(), lng: e.latLng.lng() })}
+      options={{
+        styles: silverStyle,
+        zoomControl: true,
+        mapTypeControl: false,
+        scaleControl: true,
+        streetViewControl: false,
+        rotateControl: false,
+        fullscreenControl: false
+      }}
+    >
+      {/* Current location marker */}
+      {userLocation && (
+        <Marker
+          position={{ lat: userLocation.lat, lng: userLocation.lng }}
+          icon={{
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: '#00b368',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2,
+          }}
+          title="Your current location"
+        />
+      )}
+
+      {/* Render routes */}
+      {routes && routes.map((route, idx) => {
+        const isSafest = idx === 0;
+        const isSelected = selectedRoute ? route.id === selectedRoute.id : isSafest;
+        
+        // Google Maps takes {lat, lng} objects
+        const path = route.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
+
+        return (
+          <Polyline
+            key={route.id}
+            path={path}
+            options={{
+              strokeColor: isSafest ? (route.warning ? '#e63946' : '#00b368') : '#6670a0',
+              strokeOpacity: isSelected ? 1.0 : 0.3,
+              strokeWeight: isSelected ? (isSafest ? 6 : 4) : 2,
+              icons: !isSafest ? [{
+                icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 2 },
+                offset: '0',
+                repeat: '20px'
+              }] : null,
+              zIndex: isSelected ? 100 : 10
+            }}
+          />
+        );
+      })}
+    </GoogleMap>
   );
 }
