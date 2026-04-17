@@ -38,9 +38,8 @@ cd backend && npm run dev
 cd frontend && npm run dev
 ```
 
-### 4. Open in Browser
-
-Visit **http://localhost:8080** (Express) or **http://localhost:3001** (Next.js dev)
+### 4. LIVE URL
+https://sicher-764833808302.us-central1.run.app
 
 ---
 
